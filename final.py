@@ -1,4 +1,4 @@
-# simulation of galaxy interaction
+ # simulation of galaxy interaction
 #
 # By: James McDowell
 #     Michael Rosen
@@ -13,13 +13,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import animation
-from moviepy.video.io.bindings import mplfig_to_npimage
-import moviepy.editor as mpy
+
 
 ##################### CONSTANTS/INITIAL CONDITIONS #############################
 
-#G    = 6.674e-11    # m^3/kg/s^2   gravitational constant
-G     = 1.119e-7     # ly^3/Msun/yr^2
+G    = 6.674e-11    # m^3/kg/s^2   gravitational constant
+#G     = 1.119e-7     # ly^3/Msun/yr^2
 #Msun = 1.989e30     # kg   mass of sun
 Msun  = 1             # Msun
 #Rsun = 2.469e20     # m    distance to center of milky way
@@ -179,7 +178,7 @@ def show_galaxy(locations, file_out=None):
         curr_max = max(max(loc["x"]),max(loc["y"]),max(loc["z"]))
         if max_dim < curr_max:
             max_dim = curr_max
-        ax.plot(loc["x"], loc["y"], loc["z"], c = colors[i%7],label=loc["name"])
+        ax.plot(loc["x"], loc["y"], loc["z"], c = colors[i%6],label=loc["name"])
 
     ax.set_xlim([-max_dim, max_dim])
     ax.set_ylim([-max_dim, max_dim])
@@ -193,12 +192,59 @@ def show_galaxy(locations, file_out=None):
         plt.savefig(file_out)
     else:
         plt.show()
+    return max_dim
 
-def animate_galaxy(locations, file_out=None):
+def animate_galaxy(max_dim, locations, file_out=None):
     colors = ['r','g','b','m','y','c']
-    duration = 2
-    fig_mpl, ax = plt.subplots(1,figsize=(5,3), facecolor='white')
-    xx = np.linspace(-2,2,200) # the x vector
+    #duration = 2
+    #fig_mpl, ax = plt.subplots(1,figsize=(5,3), facecolor='white')
+    #xx = np.linspace(-2,2,200) # the x vector
+
+    #x1 = L1*sin(y[:, 0])
+    #y1 = -L1*cos(y[:, 0])
+
+    #print(x1, y1)
+
+
+    #x2 = L2*sin(y[:, 2]) + x1
+    #y2 = -L2*cos(y[:, 2]) + y1
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, autoscale_on=False, xlim=(-max_dim, max_dim), ylim=(-max_dim, max_dim))
+    ax.grid()
+
+    line, = ax.plot([], [], 'o-', lw=0)
+    time_template = 'time = %.1fs'
+    time_text = ax.text(0.05, 0.9, '', transform=ax.transAxes)
+
+
+    def init():
+        line.set_data([], [])
+        time_text.set_text('')
+        return line, time_text
+
+
+    def animate(i):
+        thisx = []
+        thisy = []
+        for star in range(len(locations)):
+            thisx.append(locations[star]["x"][i])
+            thisy.append(locations[star]["y"][i])
+
+        #thisx = [0, locations[1]["x"][i]]
+        #thisy = [0, locations[1]["y"][i]]
+
+
+        line.set_data(thisx, thisy)
+        #time_text.set_text(time_template % (i*dt))
+        return line, time_text
+
+    ani = animation.FuncAnimation(fig, animate, np.arange(1, len(locations[0]["y"])),
+                                  interval=100, blit=True, init_func=init)
+
+    # ani.save('double_pendulum.mp4', fps=15)
+    plt.show()
+
 
 ######################### PROGRAM STARTS RUNNING HERE ##########################
 if __name__ == '__main__':
@@ -208,23 +254,40 @@ if __name__ == '__main__':
     sun = Body(sun_star["pos_x"], sun_star["pos_y"], sun_star["pos_z"],
                sun_star["mass"] , sun_star["vel_x"], sun_star["vel_y"],
                sun_star["vel_z"], sun_star["name"])
-    stars = []
-    stars.append(BH)
-    stars.append(sun)
+    #stars = []
+    #stars.append(BH)
+    #stars.append(sun)
 
     # Body(posx,posy,posz, mass, velx,vely,velz, name, aclx=0,acly=0,aclz=0)
-    #sun = {"location":point(0,0,0), "mass":2e30, "velocity":point(0,0,0)}
-    #earth = {"location":point(0,1.5e11,0), "mass":6e24,
+    #sun = { ":point(0,0,0), "mass":2e30, "velocity":point(0,0,0)}
+    #earth = {":point(0,1.5e11,0), "mass":6e24,
     #        "velocity":point(30000,0,0)}
-    #jupiter = {"location":point(0,7.7e11,0), "mass":1e28,
+    #jupiter = {":point(0,7.7e11,0), "mass":1e28,
     #        "velocity":point(13000,0,0)}
-    #pluto = {"location":point(0,3.7e12,0), "mass":1.3e22,
+    #pluto = {":point(0,3.7e12,0), "mass":1.3e22,
     #"velocity":point(4748,0,0)}
-    #sun = Body(0,0,0,2e30,0,0,0,"sun")
-    #earth = Body(0,1.5e11,0,6e24,30000,0,0,"earth")
-    #jupiter = Body(0,7.7e11,0,1e28,13000,0,0,"jupiter")
-    #pluto = Body(0,3.7e12,0,1e22,4748,0,0,"pluto")
-    #stars = [sun,earth,jupiter,pluto]
+    #sun = {":point(0,0,0), "mass":2e30, "velocity":point(0,0,0)}
+    #mercury = { (0,5.7e10,0), "mass":3.285e23, "velocity":point(47000,0,0)}
+    #venus = { (0,1.1e11,0), "mass":4.8e24, "velocity":point(35000,0,0)}
+    #earth = { (0,1.5e11,0), "mass":6e24, "velocity":point(30000,0,0)}
+    #mars = { (0,2.2e11,0), "mass":2.4e24, "velocity":point(24000,0,0)}
+    #jupiter = { (0,7.7e11,0), "mass":1e28, "velocity":point(13000,0,0)}
+    #saturn = { (0,1.4e12,0), "mass":5.7e26, "velocity":point(9000,0,0)}
+    #uranus = { (0,2.8e12,0), "mass":8.7e25, "velocity":point(6835,0,0)}
+    #neptune = { (0,4.5e12,0), "mass":1e26, "velocity":point(5477,0,0)}
+    #pluto = {"location":point(0,3.7e12,0), "mass":1.3e22, "velocity":point(4748,0,0)}
+
+    sun = Body(0,0,0,2e30,0,0,0,"sun")
+    mercury = Body(0, 5.7e10,0, 3.285e23, 47000,0,0, "merc")
+    venus = Body(0, 1.1e11,0, 4.8e24, 35000,0,0, "ven")
+    earth = Body(0,1.5e11,0,6e24,30000,0,0,"earth")
+    mars = Body(0,2.2e11,0,2.4e24,24000,0,0,"mars")
+    jupiter = Body(0,7.7e11,0,1e28,13000,0,0,"jupiter")
+    saturn = Body(0,1.4e12,0,5.7e26,9000,0,0,"saturn")
+    uranus = Body(0,2.8e12,0, 8.7e25,6835,0,0, "uranus")
+    neptune = Body(0,4.5e12,0, 1e26, 5477,0,0, "netune")
+    pluto = Body(0,3.7e12,0,1e22,4748,0,0,"pluto")
+    stars = [sun, mercury, venus, earth, mars, jupiter,saturn, uranus, neptune, pluto]
 
     # Galaxy(stars, posx,posy,posz, mass, velx,vely,velz, name)
     MW  = Galaxy(stars, black_hole["pos_x"], black_hole["pos_y"],
@@ -235,10 +298,6 @@ if __name__ == '__main__':
     num_steps = 1000000
     report_freq = 1000
     locations = MW.simulate_galaxy(time_step, num_steps, report_freq)
-    #print(locations[0]["x"])
-    #print(locations[0]["y"])
-    show_galaxy(locations)
-
-
-
-
+    max_dim = show_galaxy(locations)
+    #print(2335673.55458)
+    animate_galaxy(max_dim, locations)
