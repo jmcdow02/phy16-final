@@ -1,11 +1,27 @@
- # simulation of galaxy interaction
+ # n-body system interaction simulation
 #
 # By: James McDowell
 #     Michael Rosen
 #
 # Due Date: May 12, 2017
 #
+# This program implements an n-body simulation of two systems interacting via
+# the gravitational force. There are two integration methods we have
+# incorporated: Euler's Method and Runge-Kutta 4th order.
 #
+# Two classes have been defined:
+#     class Body represents one body in the system (a star if we are simulating
+#     galaxies). This body contains information about its host system's position,
+#     its own position, velocity, and changing acceleration, its mass, and name.
+#
+#     class Galaxy represents the system in which the bodies reside. It contains
+#     information about its position, velocity, total mass, and the list of bodies
+#     it holds.
+#
+# We have implemented two forms of output: a line graph of the history of
+# locations for each body, and a simulation over time. These outputs can
+# be saved to external files.
+
 
 ########################### LIBRARIES TO IMPORT ################################
 
@@ -26,7 +42,7 @@ Rsun  = 2335674      # ly
 #Vsun = 220000.0     # m/s  radial velocity of sun
 Vsun  = 0.0656823    # ly/yr
 M_BH = 4.3e11 * Msun # Msun   mass of galactic center
-
+pluto_x = 3.7e12
 
 
 
@@ -41,14 +57,15 @@ sun_star = {"pos_x":0,  "pos_y":Rsun, "pos_z":0, "mass":Msun,
 
 # defines a single body (star)
 class Body:
-    def __init__(self, pos_x, pos_y, pos_z, mass,
+    def __init__(self, gal_center, gal_vel, pos_x, pos_y, pos_z, mass,
                        vel_x, vel_y, vel_z, name="star",
                        acl_x=0, acl_y=0, acl_z=0):
-        self.pos_x = pos_x
+        self.gal_center = gal_center
+        self.pos_x = pos_x + gal_center
         self.pos_y = pos_y
         self.pos_z = pos_z
         self.mass  = mass
-        self.vel_x = vel_x
+        self.vel_x = vel_x + gal_vel
         self.vel_y = vel_y
         self.vel_z = vel_z
         self.name  = name
@@ -95,7 +112,7 @@ class Galaxy:
     # returns: nothing, updates each star's attributes
     def compute_rotation_step(self, timestep):
         for star_ind in range(len(self.stars)):
-            star = self.calc_body_acceleration(star_ind)
+            star = self.rk4_body_acceleration(star_ind, timestep)
             star.update_velocity(timestep=timestep)
             star.update_position(timestep=timestep)
 
@@ -117,6 +134,63 @@ class Galaxy:
             body.acl_x += frac * (star.pos_x - body.pos_x)
             body.acl_y += frac * (star.pos_y - body.pos_y)
             body.acl_z += frac * (star.pos_z - body.pos_z)
+        return body
+
+
+    # computes the acceleration on a single body from all other bodies in galaxy
+    # using the Runge-Kutta 4th order method
+    # takes:   galaxy, index of target body in its galaxy's star list
+    # returns: target body with updated acceleration
+    def rk4_body_acceleration(self, body_ind, timestep):
+        # body is the current star we are calculating acceleration for
+        body = self.stars[body_ind]
+        k1_x, k1_y, k1_z = 0, 0, 0
+        k2_x, k2_y, k2_z = 0, 0, 0
+        k3_x, k3_y, k3_z = 0, 0, 0
+        k4_x, k4_y, k4_z = 0, 0, 0
+        body.acl_x, body.acl_y, body.acl_z = 0, 0, 0
+
+        # creates list of stars other than current star
+        other_stars = [s for i,s in enumerate(self.stars) if i != body_ind]
+        # loops through rest of stars in galaxy
+        for star in other_stars:
+            dist = euc_dist(body,star)
+            frac = (G * star.mass) / dist**3
+
+            # k1
+            k1_x = frac * (star.pos_x - body.pos_x)
+            k1_y = frac * (star.pos_y - body.pos_y)
+            k1_z = frac * (star.pos_z - body.pos_z)
+            # calculate hypothetical positions based on k1 acceleration
+            # 0.5 timestep in the future
+            temp_x,temp_y,temp_z = integrator(body, k1_x, k1_y, k1_z,
+                                              0.5*timestep)
+
+            k2_x = frac * (star.pos_x - temp_x)
+            k2_y = frac * (star.pos_y - temp_y)
+            k2_z = frac * (star.pos_z - temp_z)
+            # calculates hypothetical positions based on k2 acceleration
+            # 0.5 timestep in the future
+            temp_x,temp_y,temp_z = integrator(body, k2_x, k2_y, k2_z,
+                                              0.5*timestep)
+
+            k3_x = frac * (star.pos_x - temp_x)
+            k3_y = frac * (star.pos_y - temp_y)
+            k3_z = frac * (star.pos_z - temp_z)
+            # calculates hypothetical positions based on k3 acceleration
+            # a full timestep in the future
+            temp_x,temp_y,temp_z = integrator(body, k3_x, k3_y, k3_z,
+                                              timestep)
+
+            k4_x = frac * (star.pos_x - temp_x)
+            k4_y = frac * (star.pos_y - temp_y)
+            k4_z = frac * (star.pos_z - temp_z)
+
+            # uses all 4 k values to calculate and update the actual
+            # acceleration of the body
+            body.acl_x += (k1_x + 2*k2_x + 2*k3_x + k4_x) / 6
+            body.acl_y += (k1_y + 2*k2_y + 2*k3_y + k4_y) / 6
+            body.acl_z += (k1_z + 2*k2_z + 2*k3_z + k4_z) / 6
         return body
 
 
@@ -144,6 +218,23 @@ class Galaxy:
 
 
 ################### GENERAL FUNCTION DEFINITIONS ############################
+
+# computes hypothetical position given acceleration
+def integrator(body, accel_x, accel_y, accel_z, timestep):
+    # copy values to temporary variables
+    # (we don't want to change the actual values for the body, only use them)
+    vx, vy, vz = body.vel_x, body.vel_y, body.vel_z
+    px, py, pz = body.pos_x, body.pos_y, body.pos_z
+    # calculates velocity based on acceleration and timestep
+    vx += accel_x * timestep
+    vy += accel_y * timestep
+    vz += accel_z * timestep
+    # calculates position based on velocity and timestep
+    px += vx * timestep
+    py += vy * timestep
+    pz += vz * timestep
+
+    return px,py,pz
 
 # computes the euclidean distance between two bodies
 # takes:   the target star, another star
@@ -180,9 +271,9 @@ def show_galaxy(locations, file_out=None):
             max_dim = curr_max
         ax.plot(loc["x"], loc["y"], loc["z"], c = colors[i%6],label=loc["name"])
 
-    ax.set_xlim([-max_dim, max_dim])
-    ax.set_ylim([-max_dim, max_dim])
-    ax.set_zlim([-max_dim, max_dim])
+    ax.set_xlim([-pluto_x, pluto_x*3])
+    ax.set_ylim([-pluto_x, pluto_x*3])
+    ax.set_zlim([-pluto_x, pluto_x*3])
     #ax.set_xlim([-max_x, max_x])
     #ax.set_ylim([-max_y, max_y])
     #ax.set_zlim([-max_z, max_z])
@@ -210,7 +301,8 @@ def animate_galaxy(max_dim, locations, file_out=None):
     #y2 = -L2*cos(y[:, 2]) + y1
 
     fig = plt.figure()
-    ax = fig.add_subplot(111, autoscale_on=False, xlim=(-max_dim, max_dim), ylim=(-max_dim, max_dim))
+    ax = fig.add_subplot(111, autoscale_on=False, xlim=(-pluto_x, pluto_x*3),
+            ylim=(-pluto_x, pluto_x * 3))
     ax.grid()
 
     line, = ax.plot([], [], 'o-', lw=0)
@@ -242,30 +334,27 @@ def animate_galaxy(max_dim, locations, file_out=None):
     ani = animation.FuncAnimation(fig, animate, np.arange(1, len(locations[0]["y"])),
                                   interval=100, blit=True, init_func=init)
 
-    # ani.save('double_pendulum.mp4', fps=15)
     plt.show()
+    ani.save(file_out, fps=15)
 
+
+def generate_stars():
+    return 0
 
 ######################### PROGRAM STARTS RUNNING HERE ##########################
 if __name__ == '__main__':
-    BH  = Body(black_hole["pos_x"], black_hole["pos_y"], black_hole["pos_z"],
+    BH  = Body(0,black_hole["pos_x"], black_hole["pos_y"], black_hole["pos_z"],
                black_hole["mass"] , black_hole["vel_x"], black_hole["vel_y"],
                black_hole["vel_z"], black_hole["name"])
-    sun = Body(sun_star["pos_x"], sun_star["pos_y"], sun_star["pos_z"],
+    sun = Body(0,sun_star["pos_x"], sun_star["pos_y"], sun_star["pos_z"],
                sun_star["mass"] , sun_star["vel_x"], sun_star["vel_y"],
                sun_star["vel_z"], sun_star["name"])
     #stars = []
     #stars.append(BH)
     #stars.append(sun)
 
-    # Body(posx,posy,posz, mass, velx,vely,velz, name, aclx=0,acly=0,aclz=0)
-    #sun = { ":point(0,0,0), "mass":2e30, "velocity":point(0,0,0)}
-    #earth = {":point(0,1.5e11,0), "mass":6e24,
-    #        "velocity":point(30000,0,0)}
-    #jupiter = {":point(0,7.7e11,0), "mass":1e28,
-    #        "velocity":point(13000,0,0)}
-    #pluto = {":point(0,3.7e12,0), "mass":1.3e22,
-    #"velocity":point(4748,0,0)}
+    # Body(gal_center,posx,posy,posz, mass, velx,vely,velz, name, aclx=0,acly=0,aclz=0)
+
     #sun = {":point(0,0,0), "mass":2e30, "velocity":point(0,0,0)}
     #mercury = { (0,5.7e10,0), "mass":3.285e23, "velocity":point(47000,0,0)}
     #venus = { (0,1.1e11,0), "mass":4.8e24, "velocity":point(35000,0,0)}
@@ -277,27 +366,52 @@ if __name__ == '__main__':
     #neptune = { (0,4.5e12,0), "mass":1e26, "velocity":point(5477,0,0)}
     #pluto = {"location":point(0,3.7e12,0), "mass":1.3e22, "velocity":point(4748,0,0)}
 
-    sun = Body(0,0,0,2e30,0,0,0,"sun")
-    mercury = Body(0, 5.7e10,0, 3.285e23, 47000,0,0, "merc")
-    venus = Body(0, 1.1e11,0, 4.8e24, 35000,0,0, "ven")
-    earth = Body(0,1.5e11,0,6e24,30000,0,0,"earth")
-    mars = Body(0,2.2e11,0,2.4e24,24000,0,0,"mars")
-    jupiter = Body(0,7.7e11,0,1e28,13000,0,0,"jupiter")
-    saturn = Body(0,1.4e12,0,5.7e26,9000,0,0,"saturn")
-    uranus = Body(0,2.8e12,0, 8.7e25,6835,0,0, "uranus")
-    neptune = Body(0,4.5e12,0, 1e26, 5477,0,0, "netune")
-    pluto = Body(0,3.7e12,0,1e22,4748,0,0,"pluto")
-    stars = [sun, mercury, venus, earth, mars, jupiter,saturn, uranus, neptune, pluto]
+    gal_1 = 0
+    gal_2 = 7.4e12
+    gal_vel = 100000
+
+    sun = Body(gal_1, gal_vel,0,0,0,2e30,0,0,0,"sun")
+    mercury = Body(gal_1, gal_vel,0, 5.7e10,0, 3.285e23, 47000,0,0, "merc")
+    venus = Body(gal_1,gal_vel,0, 1.1e11,0, 4.8e24, 35000,0,0, "ven")
+    earth = Body(gal_1,gal_vel,0,1.5e11,0,6e24,30000,0,0,"earth")
+    mars = Body(gal_1,gal_vel,0,2.2e11,0,2.4e24,24000,0,0,"mars")
+    jupiter = Body(gal_1,gal_vel,0,7.7e11,0,1e28,13000,0,0,"jupiter")
+    saturn = Body(gal_1,gal_vel,0,1.4e12,0,5.7e26,9000,0,0,"saturn")
+    uranus = Body(gal_1,gal_vel,0,2.8e12,0, 8.7e25,6835,0,0, "uranus")
+    neptune = Body(gal_1,gal_vel,0,4.5e12,0, 1e26, 5477,0,0, "netune")
+    pluto = Body(gal_1,gal_vel,0,3.7e12,0,1e22,4748,0,0,"pluto")
+    stars1 = [sun, mercury, venus, earth, mars, jupiter,saturn, uranus, neptune, pluto]
+
+    sun = Body(gal_2,-gal_vel,0,0,0,2e30,0,0,0,"sun")
+    mercury = Body(gal_2,-gal_vel,0, 5.7e10,0, 3.285e23, 47000,0,0, "merc")
+    venus = Body(gal_2,-gal_vel,0, 1.1e11,0, 4.8e24, 35000,0,0, "ven")
+    earth = Body(gal_2,-gal_vel,0,1.5e11,0,6e24,30000,0,0,"earth")
+    mars = Body(gal_2,-gal_vel,0,2.2e11,0,2.4e24,24000,0,0,"mars")
+    jupiter = Body(gal_2,-gal_vel,0,7.7e11,0,1e28,13000,0,0,"jupiter")
+    saturn = Body(gal_2,-gal_vel,0,1.4e12,0,5.7e26,9000,0,0,"saturn")
+    uranus = Body(gal_2,-gal_vel,0,2.8e12,0, 8.7e25,6835,0,0, "uranus")
+    neptune = Body(gal_2,-gal_vel,0,4.5e12,0, 1e26, 5477,0,0, "netune")
+    pluto = Body(gal_2,-gal_vel,0,3.7e12,0,1e22,4748,0,0,"pluto")
+    stars2 = [sun, mercury, venus, earth, mars, jupiter,saturn, uranus, neptune, pluto]
 
     # Galaxy(stars, posx,posy,posz, mass, velx,vely,velz, name)
-    MW  = Galaxy(stars, black_hole["pos_x"], black_hole["pos_y"],
-                 black_hole["pos_z"], black_hole["mass"] , black_hole["vel_x"],
+    MW   = Galaxy(stars1, gal_1, black_hole["pos_y"],
+                 black_hole["pos_z"], black_hole["mass"] , gal_vel,
+                 black_hole["vel_y"], black_hole["vel_z"], "Milky Way")
+    MW2  = Galaxy(stars2, gal_2, black_hole["pos_y"],
+                 black_hole["pos_z"], black_hole["mass"] , -gal_vel,
                  black_hole["vel_y"], black_hole["vel_z"], "Milky Way")
 
-    time_step = 10000
-    num_steps = 1000000
-    report_freq = 1000
+    time_step = 1000
+    num_steps = 50000
+    report_freq = 100
     locations = MW.simulate_galaxy(time_step, num_steps, report_freq)
-    max_dim = show_galaxy(locations)
+    locations2 = MW2.simulate_galaxy(time_step, num_steps, report_freq)
+    locs = locations + locations2
+    max_dim = show_galaxy(locs)
     #print(2335673.55458)
-    animate_galaxy(max_dim, locations)
+    animate_galaxy(max_dim, locs, "simulation.mp4")
+
+
+
+
